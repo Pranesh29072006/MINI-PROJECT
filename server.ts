@@ -12,6 +12,11 @@ const PORT = 3000;
 // Parse JSON payloads
 app.use(express.json({ limit: "10mb" }));
 
+// Avoid favicon 404s when no favicon file is present
+app.get('/favicon.ico', (_req, res) => {
+  res.status(204).end();
+});
+
 // Lazy-loaded Gemini Client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
