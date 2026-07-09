@@ -38,7 +38,7 @@ export default function TimetableGrid({
   const [editClassroomId, setEditClassroomId] = useState('');
   const [editBatchId, setEditBatchId] = useState('');
 
-  // AI Prompt Optimization helper
+  // Manual adjustment helper
   const [customOptimizePrompt, setCustomOptimizePrompt] = useState('');
 
   // Automatically select the first available filter option if none selected
@@ -516,42 +516,42 @@ export default function TimetableGrid({
         </div>
       )}
 
-      {/* Interactive AI Adjuster Row (Below main grid) */}
+      {/* Interactive Adjuster Row (Below main grid) */}
       {onOptimizeWithAI && (
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm">
           <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-sm font-semibold text-slate-900">Need AI Optimization or Adjustments?</h4>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Type special requirements below (e.g. "Move Grace Hopper's lectures to mornings only", "Minimize student gaps", "Ensure no labs on Friday").
-              </p>
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-slate-900">Manual Adjustments</h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Type simple adjustments below (e.g. "Move Grace Hopper's lectures to mornings only", "Swap two sessions").
+                  </p>
 
-              <div className="mt-3 flex gap-2">
-                <input
-                  type="text"
-                  value={customOptimizePrompt}
-                  onChange={e => setCustomOptimizePrompt(e.target.value)}
-                  placeholder="e.g. Try to bundle all CSE-3A lectures on Mon, Tue, and Wed only..."
-                  className="flex-1 text-xs bg-white border border-slate-200 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (customOptimizePrompt.trim()) {
-                      onOptimizeWithAI(customOptimizePrompt.trim());
-                    }
-                  }}
-                  disabled={isOptimizing || !customOptimizePrompt.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shrink-0"
-                >
-                  {isOptimizing ? 'Adjusting...' : 'Ask AI to Adjust'}
-                </button>
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      type="text"
+                      value={customOptimizePrompt}
+                      onChange={e => setCustomOptimizePrompt(e.target.value)}
+                      placeholder="e.g. Try to bundle all CSE-3A lectures on Mon, Tue, and Wed only..."
+                      className="flex-1 text-xs bg-white border border-slate-200 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (customOptimizePrompt.trim()) {
+                          onOptimizeWithAI(customOptimizePrompt.trim());
+                        }
+                      }}
+                      disabled={isOptimizing || !customOptimizePrompt.trim()}
+                      className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shrink-0"
+                    >
+                      {isOptimizing ? 'Adjusting...' : 'Apply Adjustment'}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
         </div>
       )}
     </div>

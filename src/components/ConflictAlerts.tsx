@@ -47,7 +47,7 @@ export default function ConflictAlerts({ conflicts, onAutoResolve, isResolving }
             className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50 transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isResolving ? 'animate-spin' : ''}`} />
-            Ask Gemini to Resolve Conflicts
+            Auto-resolve Conflicts
           </button>
         )}
       </div>

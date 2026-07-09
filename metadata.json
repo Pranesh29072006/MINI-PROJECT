@@ -1,6 +1,5 @@
 {
-  "name": "AI Timetable Generator",
-  "description": "An advanced, AI-powered college timetable generator that schedules classes, resolves conflicts, and optimizes timetables based on teacher availability, rooms, and constraints.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "Random Timetable Generator",
+  "description": "A frontend-only random timetable generator that assigns subjects, teachers and rooms without any backend or AI.",
+  "requestFramePermissions": []
 }

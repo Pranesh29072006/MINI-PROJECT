@@ -21,21 +21,18 @@ export default function App() {
   const [classBatches, setClassBatches] = useState<ClassBatch[]>([]);
   const [sessions, setSessions] = useState<TimetableSession[]>([]);
   
-  // Conflicts and AI notes
+  // Conflicts and scheduler notes
   const [conflicts, setConflicts] = useState<TimetableConflict[]>([]);
-  const [aiNotes, setAiNotes] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
 
   // UI state
   const [activeTab, setActiveTab] = useState<'timetable' | 'teachers' | 'subjects' | 'classrooms' | 'batches'>('timetable');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loaderStep, setLoaderStep] = useState<string>('');
   const [apiError, setApiError] = useState<string>('');
-  const [generatorMode, setGeneratorMode] = useState<'gemini' | 'local' | null>(null);
+  const [generatorMode, setGeneratorMode] = useState<'random' | null>(null);
 
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin;
-  const timetableApiUrl = `${API_BASE_URL}/api/timetable/generate`;
-
-  // AI Optimization Settings
+  // Generator Settings
   const [optimizeForGaps, setOptimizeForGaps] = useState<boolean>(true);
   const [optimizeForTeacherCompactness, setOptimizeForTeacherCompactness] = useState<boolean>(true);
 
@@ -58,7 +55,7 @@ export default function App() {
       setClassrooms(preset.classrooms);
       setClassBatches(preset.classBatches);
       setSessions([]); // Clear current schedule when loading new preset constraints
-      setAiNotes('Preset constraints loaded. Hit the "Generate Timetable with Gemini AI" button above to schedule lectures!');
+      setNotes('Preset constraints loaded. Hit the "Generate Random Timetable" button above to schedule lectures!');
       setApiError('');
     }
   };
@@ -71,21 +68,18 @@ export default function App() {
       setClassBatches([]);
       setSessions([]);
       setConflicts([]);
-      setAiNotes('');
+      setNotes('');
       setApiError('');
     }
   };
 
-  // Run generation simulation messages
+  // Run generation simulation messages (UI-only)
   const runLoaderSimulation = (onComplete: () => void) => {
     const steps = [
-      "Gathering college constraints...",
-      "Resolving instructor unavailability slots...",
-      "Checking classroom and lab facilities type boundaries...",
-      "Mapping student weekly curricular credit hours...",
-      "Invoking Gemini 3.5 Flash Model to schedule slots...",
-      "Optimizing student schedules and teacher shifts...",
-      "Validating final allocation against academic guidelines..."
+      "Gathering constraints...",
+      "Selecting random time slots and rooms...",
+      "Assigning instructors randomly...",
+      "Finalizing random schedule..."
     ];
 
     let current = 0;
@@ -100,112 +94,121 @@ export default function App() {
         clearInterval(interval);
         onComplete();
       }
-    }, 900);
+    }, 700);
 
     return () => clearInterval(interval);
   };
 
-  // Call server-side API to generate a timetable
+  // Frontend-only random timetable generator
   const handleGenerateTimetable = async () => {
     setApiError('');
 
     if (teachers.length === 0 || subjects.length === 0 || classrooms.length === 0 || classBatches.length === 0) {
-      setApiError("Please make sure you have loaded a preset or manually filled at least one teacher, subject, classroom, and student batch before generating.");
+      setApiError("Please load a preset or add at least one teacher, subject, classroom, and batch before generating.");
       return;
     }
 
-    const parseServerResponse = async (response: Response) => {
-      const text = await response.text();
-      if (!text) {
-        throw new Error("Empty response received from the timetable API.");
-      }
-      let json;
-      try {
-        json = JSON.parse(text);
-      } catch (parseErr) {
-        const preview = text.length > 500 ? `${text.slice(0, 500)}...` : text;
-        throw new Error(`Invalid JSON response from server: ${preview}`);
-      }
-      return json;
-    };
+    const totalSlotsRequired = classBatches.reduce((sum, b) => {
+      return sum + b.subjects.reduce((subSum, subId) => {
+        const sub = subjects.find(s => s.id === subId);
+        return subSum + (sub ? sub.weeklyHours : 0);
+      }, 0);
+    }, 0);
 
-    runLoaderSimulation(async () => {
-      try {
-        const response = await fetch(timetableApiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            teachers,
-            subjects,
-            classrooms,
-            classBatches,
-            timeSlots: DAYS.flatMap(day =>
-              DAILY_SLOTS.map(time => ({ day, time, isBreak: time === '12:00 - 01:00' }))
-            ),
-            optimizeForGaps,
-            optimizeForTeacherCompactness
-          }),
-        });
-
-        const data = await parseServerResponse(response);
-
-        if (response.ok && data.success) {
-          setSessions(data.sessions || []);
-          setAiNotes(data.aiNotes || "Your college schedule has been successfully generated and optimized by AI.");
-          setGeneratorMode(data.mode || 'gemini');
-        } else {
-          throw new Error(data.error || `The AI was unable to find a suitable allocation with these constraints. Server response code: ${response.status}`);
+    runLoaderSimulation(() => {
+      // Build requirements list (one item per required lecture hour)
+      const requirements: { batchId: string; subjectId: string; isLab: boolean; size: number }[] = [];
+      const subjectMap = new Map(subjects.map(s => [s.id, s]));
+      for (const batch of classBatches) {
+        for (const subId of batch.subjects) {
+          const subject = subjectMap.get(subId) as Subject | undefined;
+          if (subject) {
+            for (let i = 0; i < subject.weeklyHours; i++) {
+              requirements.push({ batchId: batch.id, subjectId: subId, isLab: subject.isLab, size: batch.size });
+            }
+          }
         }
-      } catch (err: any) {
-        console.error(err);
-        setApiError(err.message || "Failed to communicate with the timetable generator backend. Verify that your server is running.");
-      } finally {
-        setIsLoading(false);
       }
+
+      // Shuffle requirements
+      for (let i = requirements.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [requirements[i], requirements[j]] = [requirements[j], requirements[i]];
+      }
+
+      const validSlots = DAYS.flatMap(day => DAILY_SLOTS.map(time => ({ day, time }))).filter(s => s.time !== '12:00 - 01:00');
+
+      const teacherBusy = new Set<string>();
+      const roomBusy = new Set<string>();
+      const batchBusy = new Set<string>();
+
+      const sessionsResult: TimetableSession[] = [];
+
+      let reqIndex = 0;
+      const maxAttempts = requirements.length * 30;
+      let attempts = 0;
+
+      while (reqIndex < requirements.length && attempts < maxAttempts) {
+        const req = requirements[reqIndex];
+
+        // pick random slot order to try
+        const slotOrder = [...validSlots].sort(() => Math.random() - 0.5);
+        let placed = false;
+
+        for (const slot of slotOrder) {
+          const keyBatch = `${slot.day}|${slot.time}|${req.batchId}`;
+          if (batchBusy.has(keyBatch)) continue;
+
+          // find a teacher not busy at this slot
+          const teacherCandidates = teachers.filter(t => !teacherBusy.has(`${slot.day}|${slot.time}|${t.id}`));
+          if (teacherCandidates.length === 0) continue;
+          const teacher = teacherCandidates[Math.floor(Math.random() * teacherCandidates.length)];
+
+          // find room matching lab/theory and capacity and not busy
+          const roomCandidates = classrooms.filter(r => r.type === (req.isLab ? 'lab' : 'theory') && r.capacity >= req.size && !roomBusy.has(`${slot.day}|${slot.time}|${r.id}`));
+          if (roomCandidates.length === 0) continue;
+          const room = roomCandidates[Math.floor(Math.random() * roomCandidates.length)];
+
+          // assign
+          const sessionId = `s-r-${sessionsResult.length + 1}`;
+          sessionsResult.push({ id: sessionId, day: slot.day, time: slot.time, classBatchId: req.batchId, subjectId: req.subjectId, teacherId: teacher.id, classroomId: room.id });
+
+          teacherBusy.add(`${slot.day}|${slot.time}|${teacher.id}`);
+          roomBusy.add(`${slot.day}|${slot.time}|${room.id}`);
+          batchBusy.add(keyBatch);
+
+          placed = true;
+          break;
+        }
+
+        if (placed) {
+          reqIndex++;
+        } else {
+          // couldn't place this requirement now; move it towards the end and try later
+          requirements.push(req);
+          reqIndex++;
+        }
+
+        attempts++;
+      }
+
+      setSessions(sessionsResult);
+      setGeneratorMode('random');
+      setNotes(`Random schedule generated with ${sessionsResult.length} sessions.`);
+      setIsLoading(false);
     });
   };
 
   // Optimize or make adjustments via a natural language text directive
-  const handleOptimizeWithAI = async (customInstruction: string) => {
-    setApiError('');
-    setIsLoading(true);
-    setLoaderStep("Refining timetable layout based on custom AI instructions...");
-
-    try {
-      const response = await fetch(timetableApiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          teachers,
-          subjects,
-          classrooms,
-          classBatches,
-          timeSlots: DAYS.flatMap(day =>
-            DAILY_SLOTS.map(time => ({ day, time, isBreak: time === '12:00 - 01:00' }))
-          ),
-          optimizeForGaps,
-          optimizeForTeacherCompactness,
-          // We include the existing sessions as a starting baseline and prepend the custom instruction
-          additionalInstructions: customInstruction,
-          currentSessions: sessions
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setSessions(data.sessions || []);
-        setAiNotes(data.aiNotes || "Your college schedule was adjusted successfully.");
-        setGeneratorMode(data.mode || 'gemini');
-      } else {
-        throw new Error(data.error || "AI could not find an allocation fitting your adjustment requirements.");
-      }
-    } catch (err: any) {
-      console.error(err);
-      setApiError(err.message || "Adjustment failed. Check your connection or constraints.");
-    } finally {
-      setIsLoading(false);
+  const handleAdjustRandomly = (note?: string) => {
+    // simple random tweak: shuffle sessions' teachers and rooms preserving time/batch
+    const shuffled = sessions.map(s => ({ ...s }));
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
+    setSessions(shuffled);
+    setNotes(note || 'Sessions adjusted randomly.');
   };
 
   // Helper stats calculation
@@ -227,7 +230,7 @@ export default function App() {
             <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
-            <span className="font-extrabold text-sm tracking-tight block">NexusAI</span>
+            <span className="font-extrabold text-sm tracking-tight block">Nexus</span>
             <span className="text-[10px] text-slate-400 font-bold block leading-none">Timetable Scheduler</span>
           </div>
         </div>
@@ -305,32 +308,22 @@ export default function App() {
             <div className="px-1">
               <ConflictAlerts
                 conflicts={conflicts}
-                onAutoResolve={sessions.length > 0 ? () => handleOptimizeWithAI("Resolve any remaining scheduling conflicts and double-bookings automatically.") : undefined}
+                onAutoResolve={sessions.length > 0 ? () => handleAdjustRandomly("Resolve any remaining scheduling conflicts automatically.") : undefined}
                 isResolving={isLoading}
               />
             </div>
           </div>
         </nav>
 
-        {/* AI Status Panel in Sidebar */}
+        {/* Scheduler Status Panel in Sidebar */}
         <div className="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
           <div className="bg-slate-900 rounded-xl p-4 text-white">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">AI Engine Status</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Scheduler Status</p>
             <p className="text-xs mb-3 text-slate-200 font-medium">
-              {generatorMode === 'gemini' 
-                ? 'Gemini 3.5 Active (Cloud)' 
-                : generatorMode === 'local' 
-                ? 'Local CSP Solver (Offline)' 
-                : 'Ready & Standby'}
+              {generatorMode === 'random' ? 'Random Scheduler Active' : 'Ready & Standby'}
             </p>
             <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-              <div className={`h-full transition-all duration-500 ${
-                generatorMode === 'gemini' 
-                  ? 'bg-emerald-400 w-full' 
-                  : generatorMode === 'local' 
-                  ? 'bg-blue-400 w-full' 
-                  : 'bg-indigo-500 w-1/3'
-              }`}></div>
+              <div className={`h-full transition-all duration-500 ${generatorMode === 'random' ? 'bg-emerald-400 w-full' : 'bg-indigo-500 w-1/3'}`}></div>
             </div>
           </div>
         </div>
@@ -341,17 +334,13 @@ export default function App() {
         {/* Top Header Row matching the Design HTML */}
         <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <h1 className="text-base font-bold text-slate-800">AI Timetable Optimizer</h1>
+            <h1 className="text-base font-bold text-slate-800">Random Timetable Generator</h1>
             <span className="bg-indigo-50 text-indigo-700 text-[10px] font-extrabold px-2 py-0.5 rounded border border-indigo-100 uppercase tracking-wider">
               Professional Edition
             </span>
             {generatorMode && (
-              <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded border uppercase tracking-wider ${
-                generatorMode === 'gemini' 
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
-                  : 'bg-blue-50 text-blue-700 border-blue-100'
-              }`}>
-                {generatorMode === 'gemini' ? 'Gemini Cloud AI' : 'Local Fallback'}
+              <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded border uppercase tracking-wider ${generatorMode === 'random' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                Random Scheduler
               </span>
             )}
           </div>
@@ -442,16 +431,12 @@ export default function App() {
               <div className="flex-1">
                 <span className="font-bold block">Scheduling Interruption</span>
                 <p className="text-xs text-rose-700 mt-1">{apiError}</p>
-                {apiError.includes("GEMINI_API_KEY") && (
-                  <p className="text-[11px] text-indigo-700 font-semibold mt-2">
-                    💡 Tip: You can configure your Gemini API Key directly in the **Settings &gt; Secrets** panel in the AI Studio UI, then restart development server or click generate again.
-                  </p>
-                )}
+                
               </div>
             </div>
           )}
 
-          {/* Master AI Trigger Board */}
+          {/* Master Scheduler Board */}
           <div className="bg-gradient-to-r from-slate-900 to-indigo-950 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden border border-slate-800">
             <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-80 h-80 bg-teal-500/5 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none" />
@@ -459,16 +444,16 @@ export default function App() {
             <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-6">
               <div className="space-y-2 max-w-2xl">
                 <span className="inline-flex items-center gap-1.5 bg-indigo-500/20 text-indigo-300 text-xs font-bold px-3 py-1 rounded-full border border-indigo-400/20">
-                  <Sparkles className="w-3.5 h-3.5" /> AI Optimization Engine
+                  <Sparkles className="w-3.5 h-3.5" /> Random Scheduling Engine
                 </span>
                 <h2 className="text-xl md:text-2xl font-black tracking-tight leading-tight">
-                  Generate Optimized Lecture Schedule Instantly
+                  Generate Random Lecture Schedule Instantly
                 </h2>
                 <p className="text-slate-300 text-xs md:text-sm leading-relaxed">
-                  Our model reads your entire college setup (instructors, subjects, classrooms, and batches) and solves hard double-booking constraints to compile a balanced, conflict-free timetable layout.
+                  This tool assigns subjects, teachers, and rooms randomly in the browser to produce a quick sample timetable without any backend or external services.
                 </p>
 
-                {/* Toggle Optimizers */}
+                {/* Generator Settings */}
                 <div className="flex flex-wrap items-center gap-4 pt-2 text-xs text-slate-300">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
@@ -491,7 +476,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Main Action Call */}
+                {/* Main Action Call */}
               <div className="shrink-0 flex flex-col sm:flex-row lg:flex-col gap-3 justify-center">
                 <button
                   onClick={handleGenerateTimetable}
@@ -501,12 +486,12 @@ export default function App() {
                   {isLoading ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      AI Working...
+                      Generating...
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 text-white" />
-                      Generate Timetable with Gemini AI
+                      Generate Random Timetable
                     </>
                   )}
                 </button>
@@ -570,14 +555,14 @@ export default function App() {
             </div>
           </div>
 
-          {/* Rationale & AI Notes Box rendered conditionally on active layout */}
-          {aiNotes && (
+          {/* Rationale & Scheduler Notes Box rendered conditionally on active layout */}
+          {notes && (
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-2">
               <span className="inline-flex items-center gap-1.5 text-[10px] uppercase font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">
-                <Info className="w-3.5 h-3.5" /> AI Scheduling Insight
+                <Info className="w-3.5 h-3.5" /> Scheduling Insight
               </span>
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                {aiNotes}
+                {notes}
               </p>
             </div>
           )}
@@ -593,7 +578,7 @@ export default function App() {
                 classBatches={classBatches}
                 conflicts={conflicts}
                 onUpdateSessions={setSessions}
-                onOptimizeWithAI={handleOptimizeWithAI}
+                onOptimizeWithAI={handleAdjustRandomly}
                 isOptimizing={isLoading}
               />
             )}
@@ -637,11 +622,11 @@ export default function App() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-sm w-full text-center text-white space-y-5 shadow-2xl relative">
             <div className="w-14 h-14 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
             <div className="space-y-1">
-              <h3 className="font-extrabold text-base tracking-tight text-white">AI Compiling Schedule</h3>
+              <h3 className="font-extrabold text-base tracking-tight text-white">Generating Schedule</h3>
               <p className="text-xs text-indigo-400 font-semibold animate-pulse">{loaderStep}</p>
             </div>
             <p className="text-[10px] text-slate-500 italic max-w-xs mx-auto pt-2 border-t border-slate-800">
-              Solving teacher availabilities, room constraints, and optimizing lecture hours dynamically...
+              Assigning time slots and rooms randomly in the browser...
             </p>
           </div>
         </div>

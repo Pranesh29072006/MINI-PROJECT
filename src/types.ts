@@ -65,6 +65,6 @@ export interface GeneratorRequest {
 export interface GeneratorResponse {
   sessions: TimetableSession[];
   conflicts: TimetableConflict[];
-  aiNotes?: string;
+  notes?: string;
   success: boolean;
 }
