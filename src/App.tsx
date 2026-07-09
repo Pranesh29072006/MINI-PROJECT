@@ -32,6 +32,9 @@ export default function App() {
   const [apiError, setApiError] = useState<string>('');
   const [generatorMode, setGeneratorMode] = useState<'gemini' | 'local' | null>(null);
 
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+  const timetableApiUrl = `${API_BASE_URL}/api/timetable/generate`;
+
   // AI Optimization Settings
   const [optimizeForGaps, setOptimizeForGaps] = useState<boolean>(true);
   const [optimizeForTeacherCompactness, setOptimizeForTeacherCompactness] = useState<boolean>(true);
@@ -128,7 +131,7 @@ export default function App() {
 
     runLoaderSimulation(async () => {
       try {
-        const response = await fetch("/api/timetable/generate", {
+        const response = await fetch(timetableApiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -169,7 +172,7 @@ export default function App() {
     setLoaderStep("Refining timetable layout based on custom AI instructions...");
 
     try {
-      const response = await fetch("/api/timetable/generate", {
+      const response = await fetch(timetableApiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
