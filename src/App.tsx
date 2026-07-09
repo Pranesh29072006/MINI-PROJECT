@@ -32,7 +32,7 @@ export default function App() {
   const [apiError, setApiError] = useState<string>('');
   const [generatorMode, setGeneratorMode] = useState<'gemini' | 'local' | null>(null);
 
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin;
   const timetableApiUrl = `${API_BASE_URL}/api/timetable/generate`;
 
   // AI Optimization Settings
