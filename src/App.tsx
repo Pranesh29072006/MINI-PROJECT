@@ -111,6 +111,21 @@ export default function App() {
       return;
     }
 
+    const parseServerResponse = async (response: Response) => {
+      const text = await response.text();
+      if (!text) {
+        throw new Error("Empty response received from the timetable API.");
+      }
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (parseErr) {
+        const preview = text.length > 500 ? `${text.slice(0, 500)}...` : text;
+        throw new Error(`Invalid JSON response from server: ${preview}`);
+      }
+      return json;
+    };
+
     runLoaderSimulation(async () => {
       try {
         const response = await fetch("/api/timetable/generate", {
@@ -129,14 +144,14 @@ export default function App() {
           }),
         });
 
-        const data = await response.json();
+        const data = await parseServerResponse(response);
 
         if (response.ok && data.success) {
           setSessions(data.sessions || []);
           setAiNotes(data.aiNotes || "Your college schedule has been successfully generated and optimized by AI.");
           setGeneratorMode(data.mode || 'gemini');
         } else {
-          throw new Error(data.error || "The AI was unable to find a suitable allocation with these constraints.");
+          throw new Error(data.error || `The AI was unable to find a suitable allocation with these constraints. Server response code: ${response.status}`);
         }
       } catch (err: any) {
         console.error(err);
