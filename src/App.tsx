@@ -70,7 +70,7 @@ export default function App() {
       setClassrooms(preset.classrooms);
       setClassBatches(preset.classBatches);
       setSessions([]); // Clear current schedule when loading new preset constraints
-      setNotes('Preset constraints loaded. Hit the "Generate Random Timetable" button above to schedule lectures!');
+      setNotes('Preset constraints loaded. Hit the "Generate " button above to schedule lectures!');
       setApiError('');
     }
   };
@@ -114,7 +114,7 @@ export default function App() {
     return () => clearInterval(interval);
   };
 
-  // Frontend-only random timetable generator
+  // Frontend-only  generator
   const handleGenerateTimetable = async () => {
     setApiError('');
 
@@ -449,7 +449,7 @@ export default function App() {
         {/* Top Header Row matching the Design HTML */}
         <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <h1 className="text-base font-bold text-slate-800">Random Timetable Generator</h1>
+            <h1 className="text-base font-bold text-slate-800"> Generator</h1>
             <span className="bg-indigo-50 text-indigo-700 text-[10px] font-extrabold px-2 py-0.5 rounded border border-indigo-100 uppercase tracking-wider">
               Professional Edition
             </span>
@@ -615,7 +615,7 @@ export default function App() {
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 text-white" />
-                      Generate Random Timetable
+                      Generate 
                     </>
                   )}
                 </button>
