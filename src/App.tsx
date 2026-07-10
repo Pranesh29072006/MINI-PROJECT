@@ -8,7 +8,18 @@ import ClassroomManager from './components/ClassroomManager';
 import BatchManager from './components/BatchManager';
 import TimetableGrid from './components/TimetableGrid';
 import ConflictAlerts from './components/ConflictAlerts';
-import { Calendar, Users, Home, BookOpen, GraduationCap, Sparkles, RefreshCw, Layers, CheckCircle, Info, Sliders, AlertTriangle } from 'lucide-react';
+import DashboardStatCard from './components/dashboard/DashboardStatCard';
+import DashboardDetailsModal from './components/dashboard/DashboardDetailsModal';
+import InstructorDetails from './components/dashboard/InstructorDetails';
+import CourseDetails from './components/dashboard/CourseDetails';
+import ClassroomDetails from './components/dashboard/ClassroomDetails';
+import BatchDetails from './components/dashboard/BatchDetails';
+import ScheduledHoursDetails from './components/dashboard/ScheduledHoursDetails';
+import SettingsModal from './components/settings/SettingsModal';
+import { useTrend } from './hooks/useTrend';
+import { Calendar, Users, Home, BookOpen, GraduationCap, Sparkles, RefreshCw, Layers, CheckCircle, Info, Sliders, AlertTriangle, Settings } from 'lucide-react';
+
+type DashboardModalKey = 'instructors' | 'courses' | 'classrooms' | 'batches' | 'hours' | null;
 
 export default function App() {
   // Preset Dataset index state
@@ -35,6 +46,10 @@ export default function App() {
   // Generator Settings
   const [optimizeForGaps, setOptimizeForGaps] = useState<boolean>(true);
   const [optimizeForTeacherCompactness, setOptimizeForTeacherCompactness] = useState<boolean>(true);
+
+  // Dashboard stat card modal & app settings modal
+  const [activeDashboardModal, setActiveDashboardModal] = useState<DashboardModalKey>(null);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
   // Initialize with the default CS preset
   useEffect(() => {
@@ -108,23 +123,18 @@ export default function App() {
       return;
     }
 
-    const totalSlotsRequired = classBatches.reduce((sum, b) => {
-      return sum + b.subjects.reduce((subSum, subId) => {
-        const sub = subjects.find(s => s.id === subId);
-        return subSum + (sub ? sub.weeklyHours : 0);
-      }, 0);
-    }, 0);
-
     runLoaderSimulation(() => {
       // Build requirements list (one item per required lecture hour)
       const requirements: { batchId: string; subjectId: string; isLab: boolean; size: number }[] = [];
       const subjectMap = new Map(subjects.map(s => [s.id, s]));
+      let totalRequiredHours = 0;
       for (const batch of classBatches) {
         for (const subId of batch.subjects) {
           const subject = subjectMap.get(subId) as Subject | undefined;
           if (subject) {
             for (let i = 0; i < subject.weeklyHours; i++) {
               requirements.push({ batchId: batch.id, subjectId: subId, isLab: subject.isLab, size: batch.size });
+              totalRequiredHours++;
             }
           }
         }
@@ -138,9 +148,23 @@ export default function App() {
 
       const validSlots = DAYS.flatMap(day => DAILY_SLOTS.map(time => ({ day, time }))).filter(s => s.time !== '12:00 - 01:00');
 
+      // Optionally cluster the day's slots together so gaps/instructor shifts stay compact
+      if (optimizeForGaps || optimizeForTeacherCompactness) {
+        validSlots.sort((a, b) => {
+          if (a.day !== b.day) return DAYS.indexOf(a.day) - DAYS.indexOf(b.day);
+          return DAILY_SLOTS.indexOf(a.time) - DAILY_SLOTS.indexOf(b.time);
+        });
+      }
+
       const teacherBusy = new Set<string>();
       const roomBusy = new Set<string>();
       const batchBusy = new Set<string>();
+      const teacherHours = new Map<string, number>();
+
+      const isTeacherUnavailable = (teacher: Teacher, day: string, time: string) => {
+        const dayUnavailability = teacher.unavailability?.find(u => u.day.toLowerCase() === day.toLowerCase());
+        return !!dayUnavailability && dayUnavailability.slots.includes(time);
+      };
 
       const sessionsResult: TimetableSession[] = [];
 
@@ -151,17 +175,39 @@ export default function App() {
       while (reqIndex < requirements.length && attempts < maxAttempts) {
         const req = requirements[reqIndex];
 
-        // pick random slot order to try
+        // pick a slot order to try: shuffle randomly, but prefer days the batch
+        // is already scheduled on when clustering is enabled, so sessions bunch
+        // up instead of spreading thinly across the whole week
         const slotOrder = [...validSlots].sort(() => Math.random() - 0.5);
+        if (optimizeForGaps || optimizeForTeacherCompactness) {
+          slotOrder.sort((a, b) => {
+            const aBusyDay = sessionsResult.some(s => s.day === a.day && s.classBatchId === req.batchId);
+            const bBusyDay = sessionsResult.some(s => s.day === b.day && s.classBatchId === req.batchId);
+            return Number(bBusyDay) - Number(aBusyDay);
+          });
+        }
         let placed = false;
 
         for (const slot of slotOrder) {
           const keyBatch = `${slot.day}|${slot.time}|${req.batchId}`;
           if (batchBusy.has(keyBatch)) continue;
 
-          // find a teacher not busy at this slot
-          const teacherCandidates = teachers.filter(t => !teacherBusy.has(`${slot.day}|${slot.time}|${t.id}`));
+          // find a teacher not busy at this slot, not marked unavailable, and under their weekly hour cap
+          let teacherCandidates = teachers.filter(t =>
+            !teacherBusy.has(`${slot.day}|${slot.time}|${t.id}`) &&
+            !isTeacherUnavailable(t, slot.day, slot.time) &&
+            (teacherHours.get(t.id) || 0) < t.maxHoursPerWeek
+          );
+          // Prefer teachers who specialize in this subject when available
+          const preferredCandidates = teacherCandidates.filter(t => t.preferredSubjects.includes(req.subjectId));
+          if (preferredCandidates.length > 0) teacherCandidates = preferredCandidates;
           if (teacherCandidates.length === 0) continue;
+
+          // When clustering instructor shifts, prefer a teacher already teaching that day
+          if (optimizeForTeacherCompactness) {
+            const busyThatDay = teacherCandidates.filter(t => sessionsResult.some(s => s.day === slot.day && s.teacherId === t.id));
+            if (busyThatDay.length > 0) teacherCandidates = busyThatDay;
+          }
           const teacher = teacherCandidates[Math.floor(Math.random() * teacherCandidates.length)];
 
           // find room matching lab/theory and capacity and not busy
@@ -176,6 +222,7 @@ export default function App() {
           teacherBusy.add(`${slot.day}|${slot.time}|${teacher.id}`);
           roomBusy.add(`${slot.day}|${slot.time}|${room.id}`);
           batchBusy.add(keyBatch);
+          teacherHours.set(teacher.id, (teacherHours.get(teacher.id) || 0) + 1);
 
           placed = true;
           break;
@@ -192,23 +239,85 @@ export default function App() {
         attempts++;
       }
 
+      const unplacedCount = totalRequiredHours - sessionsResult.length;
       setSessions(sessionsResult);
       setGeneratorMode('random');
-      setNotes(`Random schedule generated with ${sessionsResult.length} sessions.`);
+      setNotes(
+        unplacedCount > 0
+          ? `Random schedule generated with ${sessionsResult.length} of ${totalRequiredHours} required sessions. ${unplacedCount} lecture hour(s) could not be placed due to teacher availability, weekly hour limits, or room constraints — add more teachers/rooms or adjust constraints and regenerate.`
+          : `Random schedule generated with ${sessionsResult.length} sessions.`
+      );
       setIsLoading(false);
     });
   };
 
-  // Optimize or make adjustments via a natural language text directive
+  // Reassign teachers/rooms for sessions currently flagged with conflicts, preserving day/time/batch/subject
   const handleAdjustRandomly = (note?: string) => {
-    // simple random tweak: shuffle sessions' teachers and rooms preserving time/batch
-    const shuffled = sessions.map(s => ({ ...s }));
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    const currentConflicts = checkTimetableConflicts(sessions, teachers, subjects, classrooms, classBatches);
+    const conflictedSessionIds = new Set(currentConflicts.flatMap(c => c.sessionIds));
+
+    if (conflictedSessionIds.size === 0) {
+      setNotes(note || 'No conflicts to resolve — schedule is already clean.');
+      return;
     }
-    setSessions(shuffled);
-    setNotes(note || 'Sessions adjusted randomly.');
+
+    const subjectMap = new Map(subjects.map(s => [s.id, s]));
+    const updated = sessions.map(s => ({ ...s }));
+
+    const teacherBusy = new Set(updated.filter(s => !conflictedSessionIds.has(s.id)).map(s => `${s.day}|${s.time}|${s.teacherId}`));
+    const roomBusy = new Set(updated.filter(s => !conflictedSessionIds.has(s.id)).map(s => `${s.day}|${s.time}|${s.classroomId}`));
+
+    let resolvedCount = 0;
+
+    for (const session of updated) {
+      if (!conflictedSessionIds.has(session.id)) continue;
+
+      const subject = subjectMap.get(session.subjectId);
+      const batch = classBatches.find(b => b.id === session.classBatchId);
+
+      // Try a different teacher who is free at this slot, not unavailable, and under their hour cap
+      const teacherHoursAtSlot = (teacherId: string) =>
+        updated.filter(s => s.teacherId === teacherId).length;
+
+      const teacherCandidates = teachers.filter(t => {
+        const key = `${session.day}|${session.time}|${t.id}`;
+        if (teacherBusy.has(key)) return false;
+        const dayUnavailability = t.unavailability?.find(u => u.day.toLowerCase() === session.day.toLowerCase());
+        if (dayUnavailability && dayUnavailability.slots.includes(session.time)) return false;
+        if (teacherHoursAtSlot(t.id) >= t.maxHoursPerWeek) return false;
+        return true;
+      });
+      const preferred = teacherCandidates.filter(t => subject && t.preferredSubjects.includes(subject.id));
+      const teacherPool = preferred.length > 0 ? preferred : teacherCandidates;
+
+      // Try a different room matching the subject type and batch size, free at this slot
+      const roomCandidates = classrooms.filter(r => {
+        const key = `${session.day}|${session.time}|${r.id}`;
+        if (roomBusy.has(key)) return false;
+        if (subject && r.type !== (subject.isLab ? 'lab' : 'theory')) return false;
+        if (batch && r.capacity < batch.size) return false;
+        return true;
+      });
+
+      const oldTeacherKey = `${session.day}|${session.time}|${session.teacherId}`;
+      const oldRoomKey = `${session.day}|${session.time}|${session.classroomId}`;
+
+      if (teacherPool.length > 0) {
+        teacherBusy.delete(oldTeacherKey);
+        session.teacherId = teacherPool[Math.floor(Math.random() * teacherPool.length)].id;
+        teacherBusy.add(`${session.day}|${session.time}|${session.teacherId}`);
+        resolvedCount++;
+      }
+
+      if (roomCandidates.length > 0) {
+        roomBusy.delete(oldRoomKey);
+        session.classroomId = roomCandidates[Math.floor(Math.random() * roomCandidates.length)].id;
+        roomBusy.add(`${session.day}|${session.time}|${session.classroomId}`);
+      }
+    }
+
+    setSessions(updated);
+    setNotes(note || `Attempted to auto-resolve conflicts: reassigned ${resolvedCount} session(s) to available teachers/rooms.`);
   };
 
   // Helper stats calculation
@@ -221,6 +330,12 @@ export default function App() {
 
   const totalSlotsScheduled = sessions.length;
 
+  const teacherTrend = useTrend(teachers.length);
+  const subjectTrend = useTrend(subjects.length);
+  const classroomTrend = useTrend(classrooms.length);
+  const batchTrend = useTrend(classBatches.length);
+  const scheduledHoursTrend = useTrend(totalSlotsScheduled);
+
   return (
     <div className="flex h-screen w-screen bg-slate-50 text-slate-900 overflow-hidden font-sans antialiased">
       {/* Sidebar Navigation */}
@@ -230,7 +345,7 @@ export default function App() {
             <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
-            <span className="font-extrabold text-sm tracking-tight block">Nexus</span>
+            <span className="font-extrabold text-sm tracking-tight block">Luffy</span>
             <span className="text-[10px] text-slate-400 font-bold block leading-none">Timetable Scheduler</span>
           </div>
         </div>
@@ -375,6 +490,15 @@ export default function App() {
             >
               Reset All
             </button>
+
+            <button
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Open settings"
+              title="Settings"
+              className="text-slate-500 hover:text-slate-900 hover:bg-slate-100 p-2 rounded-lg transition-all"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
         </header>
 
@@ -499,61 +623,117 @@ export default function App() {
             </div>
           </div>
 
-          {/* Dashboard Analytics & Progress Stats */}
+          {/* Dashboard Analytics & Progress Stats — click any card for full details */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
-                <Users className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400">Instructors</span>
-                <p className="text-lg font-black text-slate-900 leading-tight">{teachers.length}</p>
-              </div>
-            </div>
+            <DashboardStatCard
+              icon={<Users className="w-5 h-5" />}
+              accentClass="bg-indigo-50 text-indigo-600"
+              label="Instructors"
+              value={teachers.length}
+              subtitle="Available Faculty"
+              tooltip="Instructors currently available in the system."
+              trend={teacherTrend}
+              onClick={() => setActiveDashboardModal('instructors')}
+            />
 
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
-                <BookOpen className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400">Courses</span>
-                <p className="text-lg font-black text-slate-900 leading-tight">{subjects.length}</p>
-              </div>
-            </div>
+            <DashboardStatCard
+              icon={<BookOpen className="w-5 h-5" />}
+              accentClass="bg-teal-50 text-teal-600"
+              label="Courses"
+              value={subjects.length}
+              subtitle="Registered Curriculum"
+              tooltip="Total subjects/courses configured across all departments."
+              trend={subjectTrend}
+              onClick={() => setActiveDashboardModal('courses')}
+            />
 
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
-                <Home className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400">Classrooms</span>
-                <p className="text-lg font-black text-slate-900 leading-tight">{classrooms.length}</p>
-              </div>
-            </div>
+            <DashboardStatCard
+              icon={<Home className="w-5 h-5" />}
+              accentClass="bg-amber-50 text-amber-600"
+              label="Classrooms"
+              value={classrooms.length}
+              subtitle="Theory & Lab Rooms"
+              tooltip="Total classrooms and labs available for scheduling."
+              trend={classroomTrend}
+              onClick={() => setActiveDashboardModal('classrooms')}
+            />
 
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600 shrink-0">
-                <GraduationCap className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400">Batches</span>
-                <p className="text-lg font-black text-slate-900 leading-tight">{classBatches.length}</p>
-              </div>
-            </div>
+            <DashboardStatCard
+              icon={<GraduationCap className="w-5 h-5" />}
+              accentClass="bg-rose-50 text-rose-600"
+              label="Batches"
+              value={classBatches.length}
+              subtitle="Student Cohorts"
+              tooltip="Total student batches registered for scheduling."
+              trend={batchTrend}
+              onClick={() => setActiveDashboardModal('batches')}
+            />
 
-            <div className="col-span-2 md:col-span-1 bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
-                <Layers className="w-5 h-5" />
-              </div>
-              <div className="flex-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400">Scheduled Hours</span>
-                <div className="flex items-baseline gap-1 mt-0.5">
-                  <span className="text-base font-black text-slate-900 leading-tight">{totalSlotsScheduled}</span>
-                  <span className="text-[10px] text-slate-400 font-bold">/ {totalSlotsRequired} target</span>
-                </div>
-              </div>
-            </div>
+            <DashboardStatCard
+              className="col-span-2 md:col-span-1"
+              icon={<Layers className="w-5 h-5" />}
+              accentClass="bg-slate-100 text-slate-600"
+              label="Scheduled Hours"
+              value={totalSlotsScheduled}
+              suffix={` / ${totalSlotsRequired}`}
+              subtitle="Weekly Lecture Hours"
+              tooltip="Scheduled lecture hours out of the total required this week."
+              trend={scheduledHoursTrend}
+              onClick={() => setActiveDashboardModal('hours')}
+            />
           </div>
+
+          <DashboardDetailsModal
+            open={activeDashboardModal === 'instructors'}
+            onClose={() => setActiveDashboardModal(null)}
+            title="Instructor Database"
+            subtitle="Faculty availability, load, and teaching schedule"
+            icon={<Users className="w-4.5 h-4.5" />}
+          >
+            <InstructorDetails teachers={teachers} subjects={subjects} sessions={sessions} />
+          </DashboardDetailsModal>
+
+          <DashboardDetailsModal
+            open={activeDashboardModal === 'courses'}
+            onClose={() => setActiveDashboardModal(null)}
+            title="Courses Database"
+            subtitle="Curriculum coverage and scheduling progress"
+            icon={<BookOpen className="w-4.5 h-4.5" />}
+          >
+            <CourseDetails subjects={subjects} teachers={teachers} classBatches={classBatches} sessions={sessions} />
+          </DashboardDetailsModal>
+
+          <DashboardDetailsModal
+            open={activeDashboardModal === 'classrooms'}
+            onClose={() => setActiveDashboardModal(null)}
+            title="Classroom & Lab Allocation"
+            subtitle="Room usage, capacity, and weekly schedules"
+            icon={<Home className="w-4.5 h-4.5" />}
+          >
+            <ClassroomDetails classrooms={classrooms} subjects={subjects} teachers={teachers} classBatches={classBatches} sessions={sessions} />
+          </DashboardDetailsModal>
+
+          <DashboardDetailsModal
+            open={activeDashboardModal === 'batches'}
+            onClose={() => setActiveDashboardModal(null)}
+            title="Student Cohorts"
+            subtitle="Curriculum completion and session breakdown"
+            icon={<GraduationCap className="w-4.5 h-4.5" />}
+          >
+            <BatchDetails classBatches={classBatches} subjects={subjects} sessions={sessions} />
+          </DashboardDetailsModal>
+
+          <DashboardDetailsModal
+            open={activeDashboardModal === 'hours'}
+            onClose={() => setActiveDashboardModal(null)}
+            title="Scheduled Hours Analytics"
+            subtitle="Completion, distribution, and utilization insights"
+            icon={<Layers className="w-4.5 h-4.5" />}
+          >
+            <ScheduledHoursDetails sessions={sessions} teachers={teachers} classrooms={classrooms} classBatches={classBatches} subjects={subjects} />
+          </DashboardDetailsModal>
+
+          <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} presetNames={PRESET_DATASETS.map(p => p.name)} />
 
           {/* Rationale & Scheduler Notes Box rendered conditionally on active layout */}
           {notes && (
