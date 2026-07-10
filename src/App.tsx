@@ -568,13 +568,13 @@ export default function App() {
             <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-6">
               <div className="space-y-2 max-w-2xl">
                 <span className="inline-flex items-center gap-1.5 bg-indigo-500/20 text-indigo-300 text-xs font-bold px-3 py-1 rounded-full border border-indigo-400/20">
-                  <Sparkles className="w-3.5 h-3.5" /> Random Scheduling Engine
+                  <Sparkles className="w-3.5 h-3.5" /> Luffy Scheduling Engine
                 </span>
                 <h2 className="text-xl md:text-2xl font-black tracking-tight leading-tight">
                   Generate AI Lecture Schedule Instantly
                 </h2>
                 <p className="text-slate-300 text-xs md:text-sm leading-relaxed">
-                  This tool assigns subjects, teachers, and rooms randomly in the browser to produce a quick sample timetable without any backend or external services.
+                  This tool assigns subjects, teachers, and rooms AI -Based in the browser to produce a quick timetable.
                 </p>
 
                 {/* Generator Settings */}
