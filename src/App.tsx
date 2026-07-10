@@ -447,7 +447,7 @@ export default function App() {
                   <Sparkles className="w-3.5 h-3.5" /> Random Scheduling Engine
                 </span>
                 <h2 className="text-xl md:text-2xl font-black tracking-tight leading-tight">
-                  Generate Random Lecture Schedule Instantly
+                  Generate AI Lecture Schedule Instantly
                 </h2>
                 <p className="text-slate-300 text-xs md:text-sm leading-relaxed">
                   This tool assigns subjects, teachers, and rooms randomly in the browser to produce a quick sample timetable without any backend or external services.
