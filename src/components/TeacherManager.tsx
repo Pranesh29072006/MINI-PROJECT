@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { Teacher, Subject } from '../types';
-import { Plus, Trash2, Calendar, User, Clock, BookOpen, AlertCircle } from 'lucide-react';
-import { DAYS, DAILY_SLOTS } from '../data/presets';
+import { Plus, Trash2, User, Clock, Eye, Pencil } from 'lucide-react';
+import InstructorForm, { InstructorFormValues } from './teachers/InstructorForm';
+import { validateInstructorForm, InstructorFormErrors } from './teachers/validateInstructor';
+import EditInstructorModal from './teachers/EditInstructorModal';
+import ViewInstructorModal from './teachers/ViewInstructorModal';
+import ToastStack from './shared/ToastStack';
+import { useToast } from '../hooks/useToast';
 
 interface TeacherManagerProps {
   teachers: Teacher[];
@@ -9,63 +14,55 @@ interface TeacherManagerProps {
   onUpdateTeachers: (teachers: Teacher[]) => void;
 }
 
+const EMPTY_FORM: InstructorFormValues = {
+  name: '',
+  dept: '',
+  maxHours: 16,
+  selectedSubjects: [],
+  unavailList: []
+};
+
 export default function TeacherManager({ teachers, subjects, onUpdateTeachers }: TeacherManagerProps) {
-  const [name, setName] = useState('');
-  const [dept, setDept] = useState('');
-  const [maxHours, setMaxHours] = useState(16);
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
-  const [unavailDay, setUnavailDay] = useState(DAYS[0]);
-  const [unavailSlot, setUnavailSlot] = useState(DAILY_SLOTS[0]);
-  const [unavailList, setUnavailList] = useState<{ day: string; slots: string[] }[]>([]);
+  const [formValues, setFormValues] = useState<InstructorFormValues>(EMPTY_FORM);
+  const [formErrors, setFormErrors] = useState<InstructorFormErrors>({});
+  const [viewingTeacher, setViewingTeacher] = useState<Teacher | null>(null);
+  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  const { toasts, showToast, dismissToast } = useToast();
 
   const handleAddTeacher = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+
+    const validationErrors = validateInstructorForm(formValues, teachers);
+    if (Object.keys(validationErrors).length > 0) {
+      setFormErrors(validationErrors);
+      return;
+    }
 
     const newTeacher: Teacher = {
       id: 'T-' + Date.now(),
-      name: name.trim(),
-      dept: dept.trim() || 'CSE',
-      maxHoursPerWeek: Number(maxHours) || 16,
-      preferredSubjects: selectedSubjects,
-      unavailability: unavailList
+      name: formValues.name.trim(),
+      dept: formValues.dept.trim(),
+      maxHoursPerWeek: Number(formValues.maxHours),
+      preferredSubjects: formValues.selectedSubjects,
+      unavailability: formValues.unavailList
     };
 
     onUpdateTeachers([...teachers, newTeacher]);
-    setName('');
-    setDept('');
-    setMaxHours(16);
-    setSelectedSubjects([]);
-    setUnavailList([]);
+    setFormValues(EMPTY_FORM);
+    setFormErrors({});
+    showToast(`✅ ${newTeacher.name} added successfully.`);
   };
 
   const handleDeleteTeacher = (id: string) => {
+    const teacher = teachers.find(t => t.id === id);
     onUpdateTeachers(teachers.filter(t => t.id !== id));
+    if (teacher) showToast(`🗑 ${teacher.name} removed.`);
   };
 
-  const handleToggleSubject = (subId: string) => {
-    setSelectedSubjects(prev => 
-      prev.includes(subId) ? prev.filter(id => id !== subId) : [...prev, subId]
-    );
-  };
-
-  const handleAddUnavailability = () => {
-    const existing = unavailList.find(u => u.day === unavailDay);
-    if (existing) {
-      if (existing.slots.includes(unavailSlot)) return;
-      setUnavailList(prev => 
-        prev.map(u => u.day === unavailDay ? { ...u, slots: [...u.slots, unavailSlot] } : u)
-      );
-    } else {
-      setUnavailList(prev => [...prev, { day: unavailDay, slots: [unavailSlot] }]);
-    }
-  };
-
-  const handleRemoveUnavailability = (day: string, slot: string) => {
-    setUnavailList(prev => 
-      prev.map(u => u.day === day ? { ...u, slots: u.slots.filter(s => s !== slot) } : u)
-          .filter(u => u.slots.length > 0)
-    );
+  const handleSaveEdit = (updated: Teacher) => {
+    onUpdateTeachers(teachers.map(t => (t.id === updated.id ? updated : t)));
+    setEditingTeacher(null);
+    showToast('✅ Instructor updated successfully.');
   };
 
   return (
@@ -78,118 +75,7 @@ export default function TeacherManager({ teachers, subjects, onUpdateTeachers }:
         </h3>
 
         <form onSubmit={handleAddTeacher} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Full Name</label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Dr. Grace Hopper"
-              className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Department</label>
-              <input
-                type="text"
-                value={dept}
-                onChange={e => setDept(e.target.value)}
-                placeholder="e.g. CSE"
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Max Hours/Week</label>
-              <input
-                type="number"
-                min="2"
-                max="40"
-                value={maxHours}
-                onChange={e => setMaxHours(Number(e.target.value))}
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-              />
-            </div>
-          </div>
-
-          {/* Preferred Subjects */}
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1.5 flex items-center gap-1">
-              <BookOpen className="w-3 h-3 text-slate-400" />
-              Specialization / Subjects
-            </label>
-            <div className="max-h-28 overflow-y-auto border border-slate-100 rounded-lg p-2 space-y-1 bg-slate-50">
-              {subjects.length === 0 ? (
-                <p className="text-[11px] text-slate-400 text-center py-2">Add subjects first to select specializations</p>
-              ) : (
-                subjects.map(sub => (
-                  <label key={sub.id} className="flex items-center gap-2 px-1.5 py-1 hover:bg-slate-100 rounded cursor-pointer text-xs">
-                    <input
-                      type="checkbox"
-                      checked={selectedSubjects.includes(sub.id)}
-                      onChange={() => handleToggleSubject(sub.id)}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span className="font-medium text-slate-700">{sub.id}</span>
-                    <span className="text-slate-400 truncate">- {sub.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Unavailability Manager */}
-          <div className="border-t border-slate-100 pt-3">
-            <label className="block text-xs font-medium text-slate-700 mb-1.5 flex items-center gap-1">
-              <Calendar className="w-3 h-3 text-slate-400" />
-              Instructor Unavailability Slots
-            </label>
-            <div className="grid grid-cols-5 gap-1 items-center">
-              <select
-                value={unavailDay}
-                onChange={e => setUnavailDay(e.target.value)}
-                className="col-span-2 text-xs bg-white border border-slate-200 rounded-md py-1.5 px-2"
-              >
-                {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-              <select
-                value={unavailSlot}
-                onChange={e => setUnavailSlot(e.target.value)}
-                className="col-span-2 text-xs bg-white border border-slate-200 rounded-md py-1.5 px-2"
-              >
-                {DAILY_SLOTS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <button
-                type="button"
-                onClick={handleAddUnavailability}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md py-1.5 px-2 flex items-center justify-center transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Render current teacher unavailability list */}
-            {unavailList.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2 p-1.5 bg-rose-50/50 border border-rose-100/50 rounded-lg max-h-20 overflow-y-auto">
-                {unavailList.map(u => 
-                  u.slots.map(s => (
-                    <span key={`${u.day}-${s}`} className="inline-flex items-center gap-1 bg-white border border-rose-100 text-[10px] text-rose-800 font-medium px-2 py-0.5 rounded-full shadow-sm">
-                      {u.day.substring(0, 3)}: {s.split(' ')[0]}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveUnavailability(u.day, s)}
-                        className="hover:text-rose-600 font-bold"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          <InstructorForm values={formValues} onChange={setFormValues} subjects={subjects} errors={formErrors} idPrefix="add-instructor" />
 
           <button
             type="submit"
@@ -232,12 +118,34 @@ export default function TeacherManager({ teachers, subjects, onUpdateTeachers }:
                         </span>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleDeleteTeacher(teacher.id)}
-                      className="text-slate-400 hover:text-rose-600 transition-colors p-1"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => setViewingTeacher(teacher)}
+                        aria-label={`View ${teacher.name}`}
+                        title="View"
+                        className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors p-1.5 rounded-lg"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setEditingTeacher(teacher)}
+                        aria-label={`Edit ${teacher.name}`}
+                        title="Edit"
+                        className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors p-1.5 rounded-lg"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTeacher(teacher.id)}
+                        aria-label={`Delete ${teacher.name}`}
+                        title="Delete"
+                        className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors p-1.5 rounded-lg"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Specializations */}
@@ -265,7 +173,7 @@ export default function TeacherManager({ teachers, subjects, onUpdateTeachers }:
                   <div className="mt-3 border-t border-slate-100/60 pt-2">
                     <span className="text-[10px] uppercase font-bold text-rose-500 tracking-wider">Busy slots:</span>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {teacher.unavailability.map(u => 
+                      {teacher.unavailability.map(u =>
                         u.slots.map(s => (
                           <span key={`${u.day}-${s}`} className="bg-rose-50 border border-rose-100 text-rose-700 text-[9px] font-semibold px-1.5 py-0.5 rounded">
                             {u.day.substring(0, 3)} {s.split(' ')[0]}
@@ -280,6 +188,20 @@ export default function TeacherManager({ teachers, subjects, onUpdateTeachers }:
           </div>
         )}
       </div>
+
+      {viewingTeacher && <ViewInstructorModal teacher={viewingTeacher} subjects={subjects} onClose={() => setViewingTeacher(null)} />}
+
+      {editingTeacher && (
+        <EditInstructorModal
+          teacher={editingTeacher}
+          teachers={teachers}
+          subjects={subjects}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingTeacher(null)}
+        />
+      )}
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
