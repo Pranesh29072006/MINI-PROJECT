@@ -1,8 +1,8 @@
 <div align="center">
-<h1>Random Timetable Generator</h1>
+<h1> Generator</h1>
 </div>
 
-This is a frontend-only random timetable generator. It runs entirely in the browser — no backend or external services required.
+This is a frontend-only  generator. It runs entirely in the browser — no backend or external services required.
 
 ## Run Locally
 

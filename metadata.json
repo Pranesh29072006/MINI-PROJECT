@@ -1,5 +1,5 @@
 {
-  "name": "Random Timetable Generator",
-  "description": "A frontend-only random timetable generator that assigns subjects, teachers and rooms without any backend or AI.",
+  "name": " Generator",
+  "description": "A frontend-only  generator that assigns subjects, teachers and rooms without any backend or AI.",
   "requestFramePermissions": []
 }
