@@ -20,6 +20,7 @@ export interface Classroom {
   name: string;
   capacity: number;
   type: 'theory' | 'lab';
+  manualStatus?: 'available' | 'busy' | 'maintenance'; // optional manual override of computed usage status
 }
 
 export interface ClassBatch {

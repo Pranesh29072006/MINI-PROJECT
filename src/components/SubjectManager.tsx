@@ -1,47 +1,62 @@
 import React, { useState } from 'react';
-import { Subject } from '../types';
-import { Plus, Trash2, BookOpen, Clock, Tag } from 'lucide-react';
+import { Subject, Teacher, ClassBatch, TimetableSession } from '../types';
+import { Plus, Trash2, BookOpen, Clock, Eye, Pencil } from 'lucide-react';
+import SubjectForm, { SubjectFormValues } from './subjects/SubjectForm';
+import { validateSubjectForm, SubjectFormErrors } from './subjects/validateSubject';
+import ViewSubjectModal from './subjects/ViewSubjectModal';
+import EditSubjectModal from './subjects/EditSubjectModal';
+import ToastStack from './shared/ToastStack';
+import { useToast } from '../hooks/useToast';
 
 interface SubjectManagerProps {
   subjects: Subject[];
+  teachers: Teacher[];
+  classBatches: ClassBatch[];
+  sessions: TimetableSession[];
   onUpdateSubjects: (subjects: Subject[]) => void;
 }
 
-export default function SubjectManager({ subjects, onUpdateSubjects }: SubjectManagerProps) {
-  const [id, setId] = useState('');
-  const [name, setName] = useState('');
-  const [dept, setDept] = useState('');
-  const [weeklyHours, setWeeklyHours] = useState(3);
-  const [isLab, setIsLab] = useState(false);
+const EMPTY_FORM: SubjectFormValues = { id: '', name: '', dept: '', weeklyHours: 3, isLab: false };
+
+export default function SubjectManager({ subjects, teachers, classBatches, sessions, onUpdateSubjects }: SubjectManagerProps) {
+  const [formValues, setFormValues] = useState<SubjectFormValues>(EMPTY_FORM);
+  const [formErrors, setFormErrors] = useState<SubjectFormErrors>({});
+  const [viewingSubject, setViewingSubject] = useState<Subject | null>(null);
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const { toasts, showToast, dismissToast } = useToast();
 
   const handleAddSubject = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id.trim() || !name.trim()) return;
 
-    // Check for duplicate ID
-    if (subjects.some(s => s.id.toUpperCase() === id.trim().toUpperCase())) {
-      alert(`Subject ID "${id.trim().toUpperCase()}" already exists!`);
+    const validationErrors = validateSubjectForm(formValues, subjects);
+    if (Object.keys(validationErrors).length > 0) {
+      setFormErrors(validationErrors);
       return;
     }
 
     const newSubject: Subject = {
-      id: id.trim().toUpperCase(),
-      name: name.trim(),
-      dept: dept.trim() || 'CSE',
-      weeklyHours: Number(weeklyHours) || 3,
-      isLab
+      id: formValues.id.trim().toUpperCase(),
+      name: formValues.name.trim(),
+      dept: formValues.dept.trim() || 'CSE',
+      weeklyHours: Number(formValues.weeklyHours),
+      isLab: formValues.isLab
     };
 
     onUpdateSubjects([...subjects, newSubject]);
-    setId('');
-    setName('');
-    setDept('');
-    setWeeklyHours(3);
-    setIsLab(false);
+    setFormValues(EMPTY_FORM);
+    setFormErrors({});
+    showToast(`✅ ${newSubject.id} added successfully.`);
   };
 
   const handleDeleteSubject = (subId: string) => {
     onUpdateSubjects(subjects.filter(s => s.id !== subId));
+    showToast(`🗑 ${subId} removed.`);
+  };
+
+  const handleSaveEdit = (updated: Subject) => {
+    onUpdateSubjects(subjects.map(s => (s.id === updated.id ? updated : s)));
+    setEditingSubject(null);
+    showToast('✅ Updated successfully.');
   };
 
   return (
@@ -54,66 +69,7 @@ export default function SubjectManager({ subjects, onUpdateSubjects }: SubjectMa
         </h3>
 
         <form onSubmit={handleAddSubject} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Subject Code</label>
-            <input
-              type="text"
-              required
-              value={id}
-              onChange={e => setId(e.target.value)}
-              placeholder="e.g. CS302"
-              className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Subject Name</label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Design & Analysis of Algorithms"
-              className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Department</label>
-              <input
-                type="text"
-                value={dept}
-                onChange={e => setDept(e.target.value)}
-                placeholder="e.g. CSE"
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Hours/Week</label>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={weeklyHours}
-                onChange={e => setWeeklyHours(Number(e.target.value))}
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 py-1">
-            <input
-              type="checkbox"
-              id="isLabCheckbox"
-              checked={isLab}
-              onChange={e => setIsLab(e.target.checked)}
-              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <label htmlFor="isLabCheckbox" className="text-xs font-medium text-slate-700 select-none cursor-pointer">
-              Is this a Practical / Lab Course?
-            </label>
-          </div>
+          <SubjectForm values={formValues} onChange={setFormValues} errors={formErrors} idPrefix="add-subject" />
 
           <button
             type="submit"
@@ -161,26 +117,48 @@ export default function SubjectManager({ subjects, onUpdateSubjects }: SubjectMa
                         {sub.dept}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-center font-semibold text-slate-700 flex items-center justify-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      {sub.weeklyHours}
+                    <td className="py-3 px-3 text-center font-semibold text-slate-700">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                        {sub.weeklyHours}
+                      </span>
                     </td>
                     <td className="py-3 px-3 text-center">
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                        sub.isLab 
-                          ? 'bg-amber-50 text-amber-700 border border-amber-100' 
+                        sub.isLab
+                          ? 'bg-amber-50 text-amber-700 border border-amber-100'
                           : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                       }`}>
                         {sub.isLab ? 'Lab' : 'Theory'}
                       </span>
                     </td>
                     <td className="py-3 px-3 text-right">
-                      <button
-                        onClick={() => handleDeleteSubject(sub.id)}
-                        className="text-slate-400 hover:text-rose-600 transition-colors p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setViewingSubject(sub)}
+                          aria-label={`View ${sub.name}`}
+                          title="View Details"
+                          className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors p-1.5 rounded-lg"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setEditingSubject(sub)}
+                          aria-label={`Edit ${sub.name}`}
+                          title="Edit Record"
+                          className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors p-1.5 rounded-lg"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSubject(sub.id)}
+                          aria-label={`Delete ${sub.name}`}
+                          title="Delete Record"
+                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors p-1.5 rounded-lg"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -189,6 +167,22 @@ export default function SubjectManager({ subjects, onUpdateSubjects }: SubjectMa
           </div>
         )}
       </div>
+
+      {viewingSubject && (
+        <ViewSubjectModal
+          subject={viewingSubject}
+          teachers={teachers}
+          classBatches={classBatches}
+          sessions={sessions}
+          onClose={() => setViewingSubject(null)}
+        />
+      )}
+
+      {editingSubject && (
+        <EditSubjectModal subject={editingSubject} subjects={subjects} onSave={handleSaveEdit} onClose={() => setEditingSubject(null)} />
+      )}
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

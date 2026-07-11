@@ -78,6 +78,7 @@ export function buildClassroomRows(classrooms: Classroom[], sessions: TimetableS
     let status: RoomStatus = 'available';
     if (usagePercent >= 80) status = 'maintenance';
     else if (usagePercent >= 40) status = 'busy';
+    if (classroom.manualStatus) status = classroom.manualStatus;
 
     return { classroom, scheduledHours, availableHours, usagePercent, status, sessions: roomSessions };
   });
