@@ -774,6 +774,9 @@ export default function App() {
             {activeTab === 'subjects' && (
               <SubjectManager
                 subjects={subjects}
+                teachers={teachers}
+                classBatches={classBatches}
+                sessions={sessions}
                 onUpdateSubjects={setSubjects}
               />
             )}
@@ -781,6 +784,10 @@ export default function App() {
             {activeTab === 'classrooms' && (
               <ClassroomManager
                 classrooms={classrooms}
+                subjects={subjects}
+                teachers={teachers}
+                classBatches={classBatches}
+                sessions={sessions}
                 onUpdateClassrooms={setClassrooms}
               />
             )}
@@ -789,6 +796,7 @@ export default function App() {
               <BatchManager
                 classBatches={classBatches}
                 subjects={subjects}
+                sessions={sessions}
                 onUpdateClassBatches={setClassBatches}
               />
             )}

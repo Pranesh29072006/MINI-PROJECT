@@ -1,43 +1,61 @@
 import React, { useState } from 'react';
-import { ClassBatch, Subject } from '../types';
-import { Plus, Trash2, Users, BookOpen } from 'lucide-react';
+import { ClassBatch, Subject, TimetableSession } from '../types';
+import { Plus, Trash2, Users, Eye, Pencil } from 'lucide-react';
+import BatchForm, { BatchFormValues } from './batches/BatchForm';
+import { validateBatchForm, BatchFormErrors } from './batches/validateBatch';
+import ViewBatchModal from './batches/ViewBatchModal';
+import EditBatchModal from './batches/EditBatchModal';
+import ToastStack from './shared/ToastStack';
+import { useToast } from '../hooks/useToast';
 
 interface BatchManagerProps {
   classBatches: ClassBatch[];
   subjects: Subject[];
+  sessions: TimetableSession[];
   onUpdateClassBatches: (batches: ClassBatch[]) => void;
 }
 
-export default function BatchManager({ classBatches, subjects, onUpdateClassBatches }: BatchManagerProps) {
-  const [name, setName] = useState('');
-  const [size, setSize] = useState(45);
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+const EMPTY_FORM: BatchFormValues = { name: '', size: 45, selectedSubjects: [] };
+
+export default function BatchManager({ classBatches, subjects, sessions, onUpdateClassBatches }: BatchManagerProps) {
+  const [formValues, setFormValues] = useState<BatchFormValues>(EMPTY_FORM);
+  const [formErrors, setFormErrors] = useState<BatchFormErrors>({});
+  const [viewingBatch, setViewingBatch] = useState<ClassBatch | null>(null);
+  const [editingBatch, setEditingBatch] = useState<ClassBatch | null>(null);
+  const { toasts, showToast, dismissToast } = useToast();
 
   const handleAddBatch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+
+    const validationErrors = validateBatchForm(formValues, classBatches);
+    if (Object.keys(validationErrors).length > 0) {
+      setFormErrors(validationErrors);
+      return;
+    }
 
     const newBatch: ClassBatch = {
       id: 'B-' + Date.now(),
-      name: name.trim(),
-      size: Number(size) || 45,
-      subjects: selectedSubjects
+      name: formValues.name.trim(),
+      size: Number(formValues.size),
+      subjects: formValues.selectedSubjects
     };
 
     onUpdateClassBatches([...classBatches, newBatch]);
-    setName('');
-    setSize(45);
-    setSelectedSubjects([]);
+    setFormValues(EMPTY_FORM);
+    setFormErrors({});
+    showToast(`✅ ${newBatch.name} added successfully.`);
   };
 
   const handleDeleteBatch = (id: string) => {
+    const batch = classBatches.find(b => b.id === id);
     onUpdateClassBatches(classBatches.filter(b => b.id !== id));
+    if (batch) showToast(`🗑 ${batch.name} removed.`);
   };
 
-  const handleToggleSubject = (subId: string) => {
-    setSelectedSubjects(prev =>
-      prev.includes(subId) ? prev.filter(id => id !== subId) : [...prev, subId]
-    );
+  const handleSaveEdit = (updated: ClassBatch) => {
+    onUpdateClassBatches(classBatches.map(b => (b.id === updated.id ? updated : b)));
+    setEditingBatch(null);
+    showToast('✅ Updated successfully.');
   };
 
   return (
@@ -50,55 +68,7 @@ export default function BatchManager({ classBatches, subjects, onUpdateClassBatc
         </h3>
 
         <form onSubmit={handleAddBatch} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Batch / Class Name</label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. CSE-3A, ME-1B"
-              className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Number of Students</label>
-            <input
-              type="number"
-              min="5"
-              max="200"
-              value={size}
-              onChange={e => setSize(Number(e.target.value))}
-              className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-            />
-          </div>
-
-          {/* Core Curriculum selection */}
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1.5 flex items-center gap-1">
-              <BookOpen className="w-3.5 h-3.5 text-slate-400" />
-              Curriculum (Selected Subjects)
-            </label>
-            <div className="max-h-36 overflow-y-auto border border-slate-100 rounded-lg p-2 space-y-1 bg-slate-50">
-              {subjects.length === 0 ? (
-                <p className="text-[11px] text-slate-400 text-center py-4">Add subjects in the "Subjects" tab to configure curriculum</p>
-              ) : (
-                subjects.map(sub => (
-                  <label key={sub.id} className="flex items-center gap-2 px-1.5 py-1 hover:bg-slate-100 rounded cursor-pointer text-xs">
-                    <input
-                      type="checkbox"
-                      checked={selectedSubjects.includes(sub.id)}
-                      onChange={() => handleToggleSubject(sub.id)}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span className="font-semibold text-slate-700">{sub.id}</span>
-                    <span className="text-slate-500 truncate">- {sub.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
-          </div>
+          <BatchForm values={formValues} onChange={setFormValues} subjects={subjects} errors={formErrors} idPrefix="add-batch" />
 
           <button
             type="submit"
@@ -135,12 +105,34 @@ export default function BatchManager({ classBatches, subjects, onUpdateClassBatc
                         {batch.size} Students
                       </span>
                     </div>
-                    <button
-                      onClick={() => handleDeleteBatch(batch.id)}
-                      className="text-slate-400 hover:text-rose-600 transition-colors p-1"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => setViewingBatch(batch)}
+                        aria-label={`View ${batch.name}`}
+                        title="View Details"
+                        className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors p-1.5 rounded-lg"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setEditingBatch(batch)}
+                        aria-label={`Edit ${batch.name}`}
+                        title="Edit Record"
+                        className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors p-1.5 rounded-lg"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBatch(batch.id)}
+                        aria-label={`Delete ${batch.name}`}
+                        title="Delete Record"
+                        className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors p-1.5 rounded-lg"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-4">
@@ -170,6 +162,22 @@ export default function BatchManager({ classBatches, subjects, onUpdateClassBatc
           </div>
         )}
       </div>
+
+      {viewingBatch && (
+        <ViewBatchModal batch={viewingBatch} subjects={subjects} sessions={sessions} onClose={() => setViewingBatch(null)} />
+      )}
+
+      {editingBatch && (
+        <EditBatchModal
+          batch={editingBatch}
+          classBatches={classBatches}
+          subjects={subjects}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingBatch(null)}
+        />
+      )}
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
